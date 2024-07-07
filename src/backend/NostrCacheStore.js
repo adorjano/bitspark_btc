@@ -1,6 +1,7 @@
 // NostrCacheStore.js
 import { writable } from 'svelte/store';
 import { nostrManager } from "./NostrManagerStore.js";
+import { decrypt } from 'nostr-tools/nip04';
 const { nip19 } = window.NostrTools;
 
 // Definiert die Struktur des Cache-Objekts
@@ -172,13 +173,29 @@ class NostrEventCache {
       }
 
       // Entschlüsseln der Nachricht
-      const seal = JSON.parse(await window.nostr.nip44.decrypt(publicKey, event.content));
-      const unsignedKind14 = JSON.parse(await window.nostr.nip44.decrypt(publicKey, seal.content));
+      let seal;
+      let unsignedKind14;
+      let decrypt;
+      try
+      {
+        decrypt = await window.nostr.nip44.decrypt(event.pubkey, event.content);
+        seal = await JSON.parse(decrypt);
+        console.log("seal:", seal);
+      } catch (error) {
+        console.error("Error decrypting seal", event, error, decrypt);
+      }
+
+      try {
+        unsignedKind14 = await JSON.parse(await window.nostr.nip44.decrypt(publicKey, seal.content));
+        console.log("unsignedKind14:", unsignedKind14);
+      } catch (error) {
+        console.error("Error decrypting 14", seal, error);
+      }
 
       // Speichern der entschlüsselten Nachricht im Event
       event.decryptedContent = unsignedKind14;
-      
     } catch (error) {
+      console.log("ErrorXL:", error, event);
       event = null;
     }
   }

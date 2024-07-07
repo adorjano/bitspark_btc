@@ -43,23 +43,28 @@ class DMManager {
     };
 
     for (const receiverPubKey of receiverPubKeys) {
+      const anonPrivateKey = window.NostrTools.generateSecretKey()
+      const anonPublicKey = window.NostrTools.getPublicKey(anonPrivateKey);
+
+      console.log("Encrypt with:", receiverPubKey);
       // Versiegeln des unsignedKind14 Events (Kind 13)
+
       const sealContent = await window.nostr.nip44.encrypt(receiverPubKey, JSON.stringify(unsignedKind14));
-      const seal = {
+      let seal = {
         created_at: Math.floor(Date.now() / 1000),
         kind: 13,
         tags: [],
         content: sealContent,
       };
 
-      await window.nostr.signEvent(seal);
+      seal = await window.nostr.signEvent(seal);
 
       // Wickele das versiegelte Event ein (Kind 1059)
-      const giftWrapContent = await window.nostr.nip44.encrypt(receiverPubKey, JSON.stringify(seal));
+      const giftWrapContent = await window.nostr.nip44.encrypt(anonPublicKey, JSON.stringify(seal));
       const tags = [["p", receiverPubKey]];
 
       try {
-        await this.manager.sendAnonEvent(1059, giftWrapContent, tags);
+        await this.manager.sendAnonEvent(1059, giftWrapContent, tags, anonPrivateKey, anonPublicKey);
       } catch (error) {
         console.error(`Error sending message to ${receiverPubKey}:`, error);
       }
@@ -81,6 +86,7 @@ class DMManager {
       kinds: [1059],
       tags: { p: [this.manager.publicKey] },
     });
+
     return messages;
   }
 
@@ -88,6 +94,7 @@ class DMManager {
     try {
       const seal = JSON.parse(await window.nostr.nip44.decrypt(this.manager.publicKey, message.content));
       const unsignedKind14 = JSON.parse(await window.nostr.nip44.decrypt(this.manager.publicKey, seal.content));
+
       return unsignedKind14;
     } catch (error) {
       return null;
@@ -105,16 +112,17 @@ class DMManager {
     for (const message of messages) {
       if (message.decryptedContent) {
         decryptedMessages.push(message.decryptedContent);
-      } else {
+      } 
+      else {
+        
         const decryptedMessage = await this.decryptMessage(message);
         if (decryptedMessage) {
+          console.log("message", message);
+          console.log("PIEEEEP", decryptedMessage);
           decryptedMessages.push(decryptedMessage);
         }
       }
     }
-
-    console.log(decryptedMessages);
-
     return decryptedMessages;
   }
 

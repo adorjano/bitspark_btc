@@ -107,12 +107,8 @@ export class NostrCacheManager {
         return event.id;
     }
 
-    async sendAnonEvent(kind, content, tags) {
+    async sendAnonEvent(kind, content, tags, anonPrivateKey, anonPublicKey) {
         // Generiere einen zufälligen privaten Schlüssel
-        const anonPrivateKey = window.NostrTools.generateSecretKey()
-
-        const anonPublicKey = window.NostrTools.getPublicKey(anonPrivateKey);
-
         let event = {
             pubkey: anonPublicKey,
             created_at: Math.floor(Date.now() / 1000),
@@ -127,7 +123,7 @@ export class NostrCacheManager {
         event = window.NostrTools.finalizeEvent(event, anonPrivateKey);
         
         const pubs = this.pool.publish(this.relays, event);
-        // console.log("send anon event:", event);
+        console.log("send anon event:", event);
         // console.log("used relays:", this.relays);
         return event.id;
     }
