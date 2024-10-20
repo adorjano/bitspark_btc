@@ -6703,7 +6703,7 @@ var app = (function () {
           {
             decrypt = await window.nostr.nip44.decrypt(event.pubkey, event.content);
             seal = await JSON.parse(decrypt);
-            console.log("seal:", seal);
+            console.log("kind13:", seal);
           } catch (error) {
             console.error("Error decrypting seal", event, error, decrypt);
           }
@@ -22472,6 +22472,7 @@ var app = (function () {
           ],
           content: messageContent,
         };
+        console.log("kind14", unsignedKind14);
 
         for (const receiverPubKey of receiverPubKeys) {
           const anonPrivateKey = window.NostrTools.generateSecretKey();
@@ -22489,6 +22490,7 @@ var app = (function () {
           };
 
           seal = await window.nostr.signEvent(seal);
+          console.log("kind13", seal);
 
           // Wickele das versiegelte Event ein (Kind 1059)
           const giftWrapContent = await window.nostr.nip44.encrypt(anonPublicKey, JSON.stringify(seal));
@@ -22524,8 +22526,9 @@ var app = (function () {
       async decryptMessage(message) {
         try {
           const seal = JSON.parse(await window.nostr.nip44.decrypt(this.manager.publicKey, message.content));
+          console.log("kind13m", unsignedKind14);
           const unsignedKind14 = JSON.parse(await window.nostr.nip44.decrypt(this.manager.publicKey, seal.content));
-
+          console.log("kind14m", unsignedKind14);
           return unsignedKind14;
         } catch (error) {
           return null;
@@ -22543,14 +22546,19 @@ var app = (function () {
         for (const message of messages) {
           if (message.decryptedContent) {
             decryptedMessages.push(message.decryptedContent);
+            console.log("kind14mc", message.decryptedContent);
           } 
           else {
             
             const decryptedMessage = await this.decryptMessage(message);
             if (decryptedMessage) {
-              console.log("message", message);
-              console.log("PIEEEEP", decryptedMessage);
+              console.log("kind1059m", message);
+              console.log("kind14m", decryptedMessage);
               decryptedMessages.push(decryptedMessage);
+            }
+            else {
+              console.log("kind1059m", message);
+              console.log("could not decrypt");
             }
           }
         }

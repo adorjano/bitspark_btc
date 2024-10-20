@@ -41,6 +41,7 @@ class DMManager {
       ],
       content: messageContent,
     };
+    console.log("kind14", unsignedKind14);
 
     for (const receiverPubKey of receiverPubKeys) {
       const anonPrivateKey = window.NostrTools.generateSecretKey()
@@ -58,6 +59,7 @@ class DMManager {
       };
 
       seal = await window.nostr.signEvent(seal);
+      console.log("kind13", seal);
 
       // Wickele das versiegelte Event ein (Kind 1059)
       const giftWrapContent = await window.nostr.nip44.encrypt(anonPublicKey, JSON.stringify(seal));
@@ -93,8 +95,9 @@ class DMManager {
   async decryptMessage(message) {
     try {
       const seal = JSON.parse(await window.nostr.nip44.decrypt(this.manager.publicKey, message.content));
+      console.log("kind13m", unsignedKind14);
       const unsignedKind14 = JSON.parse(await window.nostr.nip44.decrypt(this.manager.publicKey, seal.content));
-
+      console.log("kind14m", unsignedKind14);
       return unsignedKind14;
     } catch (error) {
       return null;
@@ -112,14 +115,19 @@ class DMManager {
     for (const message of messages) {
       if (message.decryptedContent) {
         decryptedMessages.push(message.decryptedContent);
+        console.log("kind14mc", message.decryptedContent);
       } 
       else {
         
         const decryptedMessage = await this.decryptMessage(message);
         if (decryptedMessage) {
-          console.log("message", message);
-          console.log("PIEEEEP", decryptedMessage);
+          console.log("kind1059m", message);
+          console.log("kind14m", decryptedMessage);
           decryptedMessages.push(decryptedMessage);
+        }
+        else {
+          console.log("kind1059m", message);
+          console.log("could not decrypt");
         }
       }
     }

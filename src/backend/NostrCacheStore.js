@@ -180,7 +180,7 @@ class NostrEventCache {
       {
         decrypt = await window.nostr.nip44.decrypt(event.pubkey, event.content);
         seal = await JSON.parse(decrypt);
-        console.log("seal:", seal);
+        console.log("kind13:", seal);
       } catch (error) {
         console.error("Error decrypting seal", event, error, decrypt);
       }
