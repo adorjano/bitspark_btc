@@ -1,7 +1,6 @@
 // NostrCacheStore.js
 import { writable } from 'svelte/store';
 import { nostrManager } from "./NostrManagerStore.js";
-import { decrypt } from 'nostr-tools/nip04';
 const { nip19 } = window.NostrTools;
 
 // Definiert die Struktur des Cache-Objekts
@@ -154,13 +153,11 @@ class NostrEventCache {
   }
 
   async processEncryptedMessage(event) {
-    // Prüfen, ob es sich um eine verschlüsselte Nachricht handelt (kind 1059)
     if (event.kind !== 1059) {
-      return;
+      return event;
     }
 
     try {
-      // Zugriff auf den nostrManager Store
       let publicKey;
       nostrManager.subscribe(manager => {
         publicKey = manager.publicKey;
@@ -169,33 +166,27 @@ class NostrEventCache {
       if (!publicKey) {
         console.error("NostrManager public key is not available.");
         event.decryptedContent = null;
-        return;
+        return event;
       }
 
-      // Entschlüsseln der Nachricht
       let seal;
       let unsignedKind14;
       let decrypt;
-      try
-      {
+      try {
         decrypt = await window.nostr.nip44.decrypt(event.pubkey, event.content);
         seal = await JSON.parse(decrypt);
-        console.log("kind13:", seal);
       } catch (error) {
-        console.error("Error decrypting seal", event, error, decrypt);
+        // console.error("Error decrypting seal", event, error, decrypt);
       }
 
       try {
-        unsignedKind14 = await JSON.parse(await window.nostr.nip44.decrypt(publicKey, seal.content));
-        console.log("unsignedKind14:", unsignedKind14);
+        unsignedKind14 = await JSON.parse(await window.nostr.nip44.decrypt(seal.pubkey, seal.content));
+        Object.assign(event, unsignedKind14);
       } catch (error) {
-        console.error("Error decrypting 14", seal, error);
+        // console.error("Error decrypting 14", seal, error);
       }
-
-      // Speichern der entschlüsselten Nachricht im Event
-      event.decryptedContent = unsignedKind14;
     } catch (error) {
-      console.log("ErrorXL:", error, event);
+      // console.log("ErrorXL:", error, event);
       event = null;
     }
   }
@@ -211,18 +202,17 @@ class NostrEventCache {
   }
 
   // Fügt ein Event hinzu oder aktualisiert es
-  addOrUpdateEvent(event) {
+  async addOrUpdateEvent(event) {
     // Prüfen, ob das Event bereits existiert
     const existingEvent = this.events.get(event.id);
 
     if (!existingEvent) {
-      this.processProfileEvent(event);
-      this.processEncryptedMessage(event);
+      await this.processProfileEvent(event);
+      await this.processEncryptedMessage(event);
 
       // Add new event if it does not exist
       if (event) {
         this.events.set(event.id, event);
-        console.log("Event Added:", event);
       }
 
       // Aktualisieren der kindIndex Map
@@ -236,6 +226,8 @@ class NostrEventCache {
         this.authorIndex.set(event.pubkey, new Set());
       }
       this.authorIndex.get(event.pubkey).add(event);
+
+      sendSignal();
     }
   }
 
@@ -323,4 +315,10 @@ export const getEventsByCriteria = (criteria) => {
     filteredEvents = cache.getEventsByCriteria(criteria);
   })();
   return filteredEvents;
+};
+
+export const sendSignal = () => {
+  nostrCache.update(cache => {
+    return cache;
+  });
 };

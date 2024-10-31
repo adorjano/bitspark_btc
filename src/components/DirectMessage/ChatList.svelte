@@ -25,7 +25,13 @@
     });
 
     async function updateChatRooms() {
-        const rooms = await dmManager.getChatRooms();
+        const messagesByRoom = await dmManager.getMessagesByRoom();
+        const rooms = Array.from(messagesByRoom.entries()).map(([participants, messages]) => ({
+            participants,
+            messages,
+            subject: dmManager.getLatestSubject(messages),
+            lastSubjectTimestamp: dmManager.getLatestSubjectTimestamp(messages)
+        }));
         chatRooms.set(rooms);
         
         if (pubkey) {

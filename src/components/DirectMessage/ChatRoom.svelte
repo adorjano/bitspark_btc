@@ -6,7 +6,6 @@
     import { nostrCache } from '../../backend/NostrCacheStore.js';
     import { dmManager } from '../../backend/DMManager.js';
     import { socialMediaManager } from '../../backend/SocialMediaManager.js';
-    import ProfileImg from '../ProfileImg.svelte';
 
     export let selectedRoom;
 
@@ -23,7 +22,8 @@
     // Fetches messages for the selected room from the cache
     async function fetchMessages() {
         if ($selectedRoom) {
-            const fetchedMessages = await dmManager.getMessagesForRoom($selectedRoom.participants);
+            const messagesByRoom = await dmManager.getMessagesByRoom();
+            const fetchedMessages = messagesByRoom.get($selectedRoom.participants) || [];
             messages.set(fetchedMessages);
             await fetchProfiles(fetchedMessages.map(msg => msg.pubkey));
 

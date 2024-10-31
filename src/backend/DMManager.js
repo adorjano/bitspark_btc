@@ -1,7 +1,7 @@
 // DMManager.js
 import { nostrManager } from "./NostrManagerStore.js";
 import { nostrCache } from "./NostrCacheStore.js";
-import { nip19 } from 'nostr-tools';
+import { nip19, nip44 } from 'nostr-tools';
 
 class DMManager {
   constructor() {
@@ -24,14 +24,38 @@ class DMManager {
     return unsubscribe; // Rückgabe der Unsubscribe-Funktion für spätere Aufräumaktionen
   }
 
+  async wrapMessage(unsignedKind14, receiverPubKey) {
+    const anonPrivateKey = window.NostrTools.generateSecretKey();
+    const anonPublicKey = window.NostrTools.getPublicKey(anonPrivateKey);
+
+    // Erstelle das versiegelte Event (Kind 13)
+    const sealContent = await window.nostr.nip44.encrypt(receiverPubKey, JSON.stringify(unsignedKind14));
+    let seal = {
+      created_at: Math.floor(Date.now() / 1000),
+      kind: 13,
+      tags: [],
+      content: sealContent,
+    };
+    seal = await window.nostr.signEvent(seal);
+
+    // Wickele das versiegelte Event ein (Kind 1059)
+    const conversationKey = nip44.getConversationKey(anonPrivateKey, receiverPubKey);
+    const giftWrapContent = await nip44.encrypt(JSON.stringify(seal), conversationKey);
+    
+    return {
+      content: giftWrapContent,
+      anonPrivateKey,
+      anonPublicKey
+    };
+  }
+
   async sendMessage(receiverPubKeys, messageContent, subject) {
     if (!this.manager || !this.manager.publicKey) {
       console.error("Manager or public key not initialized.");
       return;
     }
 
-    // Erstelle das unsignedKind14 Event
-    const unsignedKind14 = {
+    const kind14 = {
       pubkey: this.manager.publicKey,
       created_at: Math.floor(Date.now() / 1000),
       kind: 14,
@@ -41,149 +65,96 @@ class DMManager {
       ],
       content: messageContent,
     };
-    console.log("kind14", unsignedKind14);
 
     for (const receiverPubKey of receiverPubKeys) {
-      const anonPrivateKey = window.NostrTools.generateSecretKey()
-      const anonPublicKey = window.NostrTools.getPublicKey(anonPrivateKey);
-
-      console.log("Encrypt with:", receiverPubKey);
-      // Versiegeln des unsignedKind14 Events (Kind 13)
-
-      const sealContent = await window.nostr.nip44.encrypt(receiverPubKey, JSON.stringify(unsignedKind14));
-      let seal = {
-        created_at: Math.floor(Date.now() / 1000),
-        kind: 13,
-        tags: [],
-        content: sealContent,
-      };
-
-      seal = await window.nostr.signEvent(seal);
-      console.log("kind13", seal);
-
-      // Wickele das versiegelte Event ein (Kind 1059)
-      const giftWrapContent = await window.nostr.nip44.encrypt(anonPublicKey, JSON.stringify(seal));
-      const tags = [["p", receiverPubKey]];
-
       try {
-        await this.manager.sendAnonEvent(1059, giftWrapContent, tags, anonPrivateKey, anonPublicKey);
+        const { content, anonPrivateKey, anonPublicKey } = await this.wrapMessage(kind14, receiverPubKey);
+        const tags = [["p", receiverPubKey]];
+        
+        await this.manager.sendAnonEvent(1059, content, tags, anonPrivateKey, anonPublicKey);
       } catch (error) {
         console.error(`Error sending message to ${receiverPubKey}:`, error);
       }
     }
   }
 
-  async getMessagesForRoom(participants) {
-    const decryptedMessages = await this.getMessages();
-    const roomMessages = decryptedMessages.filter(message => {
-      const messageParticipants = message.tags.filter(tag => tag[0] === 'p').map(tag => tag[1]).sort().join(',');
-      return messageParticipants === participants;
-    });
-
-    return roomMessages.sort((a, b) => a.created_at - b.created_at);
-  }
-
-  async fetchMessages() {
-    const messages = await this.cache.getEventsByCriteria({
-      kinds: [1059],
-      tags: { p: [this.manager.publicKey] },
-    });
-
-    return messages;
-  }
-
-  async decryptMessage(message) {
-    try {
-      const seal = JSON.parse(await window.nostr.nip44.decrypt(this.manager.publicKey, message.content));
-      console.log("kind13m", unsignedKind14);
-      const unsignedKind14 = JSON.parse(await window.nostr.nip44.decrypt(this.manager.publicKey, seal.content));
-      console.log("kind14m", unsignedKind14);
-      return unsignedKind14;
-    } catch (error) {
-      return null;
-    }
-  }
-
-  async getMessages() {
+  async getMessagesByRoom() {
     if (!this.manager) {
-      return [];
+      return new Map();
     }
 
-    const messages = await this.fetchMessages();
-    const decryptedMessages = [];
+    const messages = await this.cache.getEventsByCriteria({
+      kinds: [14],
+      tags: { p: [this.manager.publicKey] }
+    });
 
-    for (const message of messages) {
-      if (message.decryptedContent) {
-        decryptedMessages.push(message.decryptedContent);
-        console.log("kind14mc", message.decryptedContent);
-      } 
-      else {
-        
-        const decryptedMessage = await this.decryptMessage(message);
-        if (decryptedMessage) {
-          console.log("kind1059m", message);
-          console.log("kind14m", decryptedMessage);
-          decryptedMessages.push(decryptedMessage);
-        }
-        else {
-          console.log("kind1059m", message);
-          console.log("could not decrypt");
-        }
-      }
-    }
-    return decryptedMessages;
-  }
+    const messagesByRoom = new Map();
 
-  async getChatRooms() {
-    const decryptedMessages = await this.getMessages();
-    const chatRooms = {};
-  
-    decryptedMessages.forEach(message => {
+    messages.forEach(message => {
       const participantsArray = message.tags
         .filter(tag => tag[0] === 'p')
         .map(tag => tag[1])
         .sort();
-  
-      // Filtere Chatrooms mit nur einem Teilnehmer
-      if (participantsArray.length <= 1) {
-        return;
-      }
-  
-      // Filtere Chatrooms mit doppelten Teilnehmern
-      const hasDuplicates = participantsArray.some((item, index) => participantsArray.indexOf(item) !== index);
-      if (hasDuplicates) {
-        return;
-      }
-  
-      // Überprüfe auf ungültige Teilnehmer-PubKeys (zum Beispiel leere Strings)
-      const hasInvalidPubKeys = participantsArray.some(pubKey => !pubKey || typeof pubKey !== 'string');
-      if (hasInvalidPubKeys) {
-        return;
-      }
-  
-      const participants = participantsArray.join(',');
-  
-      if (!chatRooms[participants]) {
-        chatRooms[participants] = {
-          participants,
-          messages: [],
-          subject: null,
-          lastSubjectTimestamp: 0
-        };
-      }
-  
-      chatRooms[participants].messages.push(message);
-  
-      const subjectTag = message.tags.find(tag => tag[0] === 'subject');
-      if (subjectTag && message.created_at > chatRooms[participants].lastSubjectTimestamp) {
-        chatRooms[participants].subject = subjectTag[1];
-        chatRooms[participants].lastSubjectTimestamp = message.created_at;
+
+      if (this.isValidRoom(participantsArray)) {
+        const participants = participantsArray.join(',');
+        if (!messagesByRoom.has(participants)) {
+          messagesByRoom.set(participants, []);
+        }
+        messagesByRoom.get(participants).push(message);
       }
     });
-  
-    return Object.values(chatRooms);
+
+    // Sortiere Nachrichten in jedem Room
+    messagesByRoom.forEach(messages => {
+      messages.sort((a, b) => a.created_at - b.created_at);
+    });
+
+    return messagesByRoom;
   }
-  
+
+  hasDuplicates(array) {
+    return array.some((item, index) => array.indexOf(item) !== index);
+  }
+
+  hasInvalidPubKeys(pubKeys) {
+    return pubKeys.some(pubKey => !pubKey || typeof pubKey !== 'string' || pubKey.length !== 64);
+  }
+
+  isValidRoom(participantsArray) {
+    return participantsArray.length > 1 && 
+           !this.hasDuplicates(participantsArray) && 
+           !this.hasInvalidPubKeys(participantsArray);
+  }
+
+  async getChatRooms() {
+    const messagesByRoom = await this.getMessagesByRoom();
+    return Array.from(messagesByRoom.entries()).map(([participants, messages]) => ({
+      participants,
+      messages,
+      subject: this.getLatestSubject(messages),
+      lastSubjectTimestamp: this.getLatestSubjectTimestamp(messages)
+    }));
+  }
+
+  async getMessagesForRoom(participants) {
+    const messagesByRoom = await this.getMessagesByRoom();
+    return messagesByRoom.get(participants) || [];
+  }
+
+  getLatestSubject(messages) {
+    const messageWithSubject = [...messages]
+      .reverse()
+      .find(msg => msg.tags.some(tag => tag[0] === 'subject'));
+    return messageWithSubject?.tags.find(tag => tag[0] === 'subject')?.[1] || null;
+  }
+
+  getLatestSubjectTimestamp(messages) {
+    const messageWithSubject = [...messages]
+      .reverse()
+      .find(msg => msg.tags.some(tag => tag[0] === 'subject'));
+    return messageWithSubject?.created_at || 0;
+  }
 
   subscribeToMessages() {
     if (!this.manager) {

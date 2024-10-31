@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+      - "35729:35729"  # Port für LiveReload
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./rollup.config.js:/app/rollup.config.js
+      - ./.gitignore:/app/.gitignore
+      - ./package.json:/app/package.json
+      - ./package-lock.json:/app/package-lock.json
+    environment:
+      - HOST=0.0.0.0
+      - PORT=5000
+    command: npm run dev
